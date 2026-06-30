@@ -24,6 +24,15 @@ if 'config' not in st.session_state:
     st.session_state.anthropic_key = st.session_state.config.get("anthropic_key", "")
     st.session_state.ai_provider   = st.session_state.config.get("ai_provider", "gemini")
 
+# Auto-detectar red y dependencias (una sola vez por sesión)
+if 'net_iface' not in st.session_state:
+    from utils.network_detector import get_active_network, get_setup_guide, get_os
+    _iface, _subnet = get_active_network()
+    st.session_state.net_iface    = _iface
+    st.session_state.net_subnet   = _subnet
+    st.session_state.net_os       = get_os()
+    st.session_state.setup_issues = get_setup_guide()
+
 
 # --- FUNCIÓN DE PROCESAMIENTO DE ESTADÍSTICAS ---
 def procesar_estadisticas(scan_data, web_data=None):
@@ -168,8 +177,8 @@ if 'remediadas_ids' not in st.session_state:
 
 # 1. CONFIGURACIÓN DE LA PÁGINA
 st.set_page_config(
-    page_title="Sentinel-Core AI",
-    page_icon="🛡️",
+    page_title="OtsuSearch",
+    page_icon="🔍",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -177,56 +186,189 @@ st.set_page_config(
 # 2. ESTILO CSS PERSONALIZADO (Look & Feel SOC)
 st.markdown("""
     <style>
-    .stApp { background-color: #0B0E14; color: #FFFFFF; }
-    [data-testid="stSidebar"] { background-color: #0B0E14; border-right: 1px solid #1E2129; }
-    .metric-card {
-        background-color: #161B22;
-        border: 1px solid #30363D;
-        padding: 1.5rem;
-        border-radius: 12px;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+    /* ── Global ─────────────────────────────────────────────────── */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    .stApp {
+        background-color: #080C14;
+        color: #E6EDF3;
+        font-family: 'Inter', 'Segoe UI', sans-serif;
     }
-    .metric-value { font-size: 2.2rem; font-weight: bold; margin: 0; }
-    .metric-title { color: #8B949E; font-size: 0.9rem; letter-spacing: 0.1rem; }
-    h1, h2, h3 { color: #00E5FF !important; }
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #0D1117 0%, #0A0E17 100%);
+        border-right: 1px solid #21262D;
+    }
+    .block-container { padding-top: 1.5rem !important; }
+    #MainMenu, footer { visibility: hidden; }
+    [data-testid="stToolbar"] { display: none; }
+    section[data-testid="stSidebar"] > div { padding-top: 1.5rem; }
+
+    /* ── Typography ──────────────────────────────────────────────── */
+    h1 {
+        color: #E6EDF3 !important;
+        font-size: 1.65rem !important;
+        font-weight: 700 !important;
+        letter-spacing: -0.02em !important;
+        margin-bottom: 0.15rem !important;
+    }
+    h2 { color: #C9D1D9 !important; font-size: 1.2rem !important; font-weight: 600 !important; }
+    h3 { color: #00D4FF !important; font-size: 0.85rem !important; font-weight: 700 !important;
+         letter-spacing: 0.1em !important; text-transform: uppercase !important; }
+
+    /* ── Metric Cards ────────────────────────────────────────────── */
+    .metric-card {
+        background: #10151E;
+        border: 1px solid #1E2733;
+        border-radius: 10px;
+        padding: 1rem 1.2rem 0.9rem;
+        position: relative;
+        overflow: hidden;
+        min-height: 90px;
+        transition: border-color 0.2s;
+    }
+    .metric-card:hover { border-color: #2D3748; }
+    .metric-card .accent-bar {
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, #00D4FF, #0077FF);
+        border-radius: 10px 10px 0 0;
+    }
+    .metric-value {
+        font-size: 2rem;
+        font-weight: 800;
+        margin: 0.2rem 0 0;
+        line-height: 1;
+        color: #E6EDF3;
+        letter-spacing: -0.03em;
+    }
+    .metric-title {
+        color: #4A5568;
+        font-size: 0.65rem;
+        letter-spacing: 0.12rem;
+        text-transform: uppercase;
+        font-weight: 600;
+        margin-bottom: 0.1rem;
+    }
+    .metric-sub { color: #4A5568; font-size: 0.72rem; margin-top: 0.35rem; }
+
+    /* ── Status Banner ───────────────────────────────────────────── */
+    .status-live {
+        background: #13080C;
+        border: 1px solid #FF4B4B44;
+        border-left: 4px solid #FF4B4B;
+        border-radius: 8px;
+        padding: 9px 14px;
+        margin-bottom: 18px;
+        font-size: 0.82rem;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .status-idle {
+        background: #10151E;
+        border: 1px solid #2D3748;
+        border-left: 4px solid #4A5568;
+        border-radius: 8px;
+        padding: 9px 14px;
+        margin-bottom: 18px;
+        font-size: 0.82rem;
+    }
+
+    /* ── Scanner Summary Cards ───────────────────────────────────── */
+    .scanner-card {
+        background: #10151E;
+        border: 1px solid #1E2733;
+        border-radius: 8px;
+        padding: 11px 13px;
+        height: 100%;
+        font-size: 0.82rem;
+    }
+
+    /* ── Finding Rows ────────────────────────────────────────────── */
+    .finding-row {
+        background: #10151E;
+        border: 1px solid #1E2733;
+        border-radius: 6px;
+        padding: 10px 13px;
+        margin-bottom: 5px;
+        font-size: 0.83rem;
+    }
+
+    /* ── Sidebar nav override ────────────────────────────────────── */
+    [data-testid="stSidebar"] hr { border-color: #21262D; margin: 0.6rem 0; }
     </style>
     """, unsafe_allow_html=True)
 
 # 3. BARRA LATERAL (SideBar)
 with st.sidebar:
-    st.markdown("<h1 style='text-align: center; font-size: 28px; margin-bottom: 0;'>SENTINEL</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: #00E5FF; font-weight: bold;'>CORE AI</p>", unsafe_allow_html=True)
-    st.write("---")
-    
+    st.markdown("""
+        <div style='text-align:center; padding: 8px 0 12px;'>
+            <p style='font-size:22px; font-weight:800; color:#E6EDF3; margin:0; letter-spacing:1px;'>
+                Otsu<span style='color:#00D4FF;'>Search</span>
+            </p>
+            <p style='font-size:10px; color:#4A5568; letter-spacing:3px; text-transform:uppercase; margin:4px 0 0;'>
+                Cyber Audit Platform
+            </p>
+        </div>
+    """, unsafe_allow_html=True)
+
     selected = option_menu(
         menu_title=None,
         options=["Dashboard", "Scanners", "Knowledge Base", "Reports", "Settings"],
         icons=["speedometer2", "shield-lock", "book", "file-earmark-bar-graph", "gear"],
         default_index=0,
         styles={
-            "container": {"background-color": "#0B0E14"},
-            "icon": {"color": "#00E5FF", "font-size": "20px"}, 
-            "nav-link": {"font-size": "16px", "text-align": "left", "color": "white"},
-            "nav-link-selected": {"background-color": "#1E2129", "color": "#00E5FF", "border-left": "3px solid #00E5FF"},
+            "container": {"background-color": "transparent", "padding": "0"},
+            "icon": {"color": "#00D4FF", "font-size": "16px"},
+            "nav-link": {
+                "font-size": "14px", "text-align": "left", "color": "#8B949E",
+                "padding": "9px 16px", "border-radius": "6px", "margin": "1px 0",
+            },
+            "nav-link-selected": {
+                "background-color": "#161B22", "color": "#E6EDF3",
+                "border-left": "3px solid #00D4FF", "font-weight": "600",
+            },
         }
     )
-    
-    # Indicador de Motor IA (Global)
+
+    st.markdown("<hr style='border-color:#1E2733;margin:12px 0;'>", unsafe_allow_html=True)
+
+    # Indicador de Motor IA
     _active_key = (st.session_state.anthropic_key if st.session_state.ai_provider == "claude"
                    else st.session_state.gemini_key)
-    ia_status_color = "#39FF14" if _active_key.strip() else "#FF4B4B"
+    _ia_ok = bool(_active_key.strip())
     _provider_label = "Claude" if st.session_state.ai_provider == "claude" else "Gemini"
-    ia_status_text = f"MOTOR IA ACTIVO ({_provider_label})" if _active_key.strip() else "MOTOR IA INACTIVO"
-    
+    _dot_color  = "#39FF14" if _ia_ok else "#FF4B4B"
+    _ia_text    = f"{_provider_label} — Activo" if _ia_ok else "Sin API Key"
     st.markdown(f"""
-        <div style='text-align: center; padding: 10px; border-radius: 5px; background-color: {ia_status_color}22; border: 1px solid {ia_status_color};'>
-            <span style='color: {ia_status_color}; font-weight: bold;'>● {ia_status_text}</span>
+        <div style='padding:9px 12px; border-radius:8px; background:#10151E;
+                    border:1px solid {"#39FF1433" if _ia_ok else "#FF4B4B33"};
+                    display:flex; align-items:center; gap:8px;'>
+            <span style='color:{_dot_color}; font-size:10px;'>●</span>
+            <span style='color:#8B949E; font-size:12px; font-weight:500;'>Motor IA</span>
+            <span style='color:{_dot_color}; font-size:12px; font-weight:600; margin-left:auto;'>{_ia_text}</span>
         </div>
     """, unsafe_allow_html=True)
-    st.write("---")
-    st.info("📡 RED: OK | ⚡ AI: ON")
+
+    # Indicador de red detectada
+    _net_color = "#39FF14" if st.session_state.net_subnet != "192.168.1.0/24" else "#4A5568"
+    st.markdown(f"""
+        <div style='margin-top:6px; padding:9px 12px; border-radius:8px; background:#10151E;
+                    border:1px solid #1E2733; display:flex; align-items:center; gap:8px;'>
+            <span style='color:{_net_color}; font-size:10px;'>●</span>
+            <span style='color:#8B949E; font-size:12px; font-weight:500;'>Red detectada</span>
+            <span style='color:#C9D1D9; font-size:11px; font-weight:600; margin-left:auto;'>
+                {st.session_state.net_subnet}
+            </span>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Alertas de setup (dependencias faltantes)
+    if st.session_state.get('setup_issues'):
+        st.markdown("<hr style='border-color:#1E2733;margin:10px 0;'>", unsafe_allow_html=True)
+        st.markdown("<p style='color:#FFD700;font-size:11px;font-weight:600;margin:0 0 6px;'>⚠ Setup pendiente</p>", unsafe_allow_html=True)
+        for key, issue in st.session_state.setup_issues.items():
+            st.markdown(f"<p style='color:#FF4B4B;font-size:10px;margin:2px 0;'>● {issue['title']}</p>", unsafe_allow_html=True)
 
 # ─── TOPOLOGÍA DE RED ────────────────────────────────────────────────────────
 def _render_network_graph(arp_data, nmap_data=None):
@@ -324,10 +466,10 @@ def _render_network_graph(arp_data, nmap_data=None):
 
 
 # 4. LÓGICA DE NAVEGACIÓN
-fecha_actual = datetime.datetime.now().strftime("%A, %d de %B de %2026")
+fecha_actual = datetime.datetime.now().strftime("%A, %d de %B de %Y")
 
 if selected == "Dashboard":
-    st.title("📊 Dashboard de Operaciones")
+    st.title("Centro de Operaciones")
 
     has_nmap = 'last_scan' in st.session_state
     has_arp  = 'last_arp'  in st.session_state
@@ -338,112 +480,152 @@ if selected == "Dashboard":
             st.session_state.get('last_scan', {"hosts": []}),
             st.session_state.get('last_web'),
         )
-        sources = " | ".join(filter(None, [
+        sources = " · ".join(filter(None, [
             "Nmap" if has_nmap else "",
             "Scapy" if has_arp else "",
             "Web" if has_web else "",
         ]))
-        label_mode = f"🔴 DATOS EN VIVO — {sources}"
+        st.markdown(f"""
+            <div class='status-live'>
+                <span style='color:#FF4B4B; font-size:9px;'>●</span>
+                <span style='color:#C9D1D9; font-weight:600;'>DATOS EN VIVO</span>
+                <span style='color:#4A5568;'>·</span>
+                <span style='color:#8B949E;'>{sources}</span>
+                <span style='color:#4A5568; margin-left:auto; font-size:0.75rem;'>{fecha_actual}</span>
+            </div>
+        """, unsafe_allow_html=True)
     else:
         stats = {
             "totales": 0, "criticos": 0, "remediadas": 0, "en_progreso": 0,
             "web_secrets": 0, "web_headers_missing": 0,
             "distribucion": [0, 0, 0, 0], "lista_hallazgos": [],
         }
-        label_mode = "⚪ MODO ESPERA — Ejecuta un escaneo para ver datos reales"
+        st.markdown(f"""
+            <div class='status-idle'>
+                <span style='color:#4A5568;'>○</span>
+                <span style='color:#4A5568; margin-left:6px;'>Modo espera — ejecuta un escaneo para ver datos</span>
+                <span style='color:#4A5568; float:right; font-size:0.75rem;'>{fecha_actual}</span>
+            </div>
+        """, unsafe_allow_html=True)
 
-    st.write(f"Sentinel-Core AI • {fecha_actual} • **{label_mode}**")
-
-    # ── FILA 1: Métricas de red y puertos ───────────────────────────────────
+    # ── FILA 1: KPIs principales ─────────────────────────────────────────────
     hosts_count = st.session_state['last_arp']['hosts_found'] if has_arp else 0
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         st.markdown(f"""<div class='metric-card'>
-            <p class='metric-title'>HOSTS EN RED</p>
-            <p class='metric-value'>{hosts_count}</p>
-            <small style='color:#00E5FF;'>Detectados por Scapy</small>
+            <div class='accent-bar' style='background:linear-gradient(90deg,#00D4FF,#0077FF);'></div>
+            <p class='metric-title'>Hosts detectados</p>
+            <p class='metric-value' style='color:#00D4FF;'>{hosts_count}</p>
+            <p class='metric-sub'>ARP · Scapy</p>
         </div>""", unsafe_allow_html=True)
     with col2:
         st.markdown(f"""<div class='metric-card'>
-            <p class='metric-title'>CRÍTICAS</p>
+            <div class='accent-bar' style='background:linear-gradient(90deg,#FF4B4B,#FF0055);'></div>
+            <p class='metric-title'>Críticas</p>
             <p class='metric-value' style='color:#FF4B4B;'>{stats['criticos']}</p>
-            <small style='color:#8B949E;'>Puertos + Web</small>
+            <p class='metric-sub'>Puertos + Web</p>
         </div>""", unsafe_allow_html=True)
     with col3:
         st.markdown(f"""<div class='metric-card'>
-            <p class='metric-title'>SECRETOS WEB</p>
-            <p class='metric-value' style='color:#FF4B4B;'>{stats['web_secrets']}</p>
-            <small style='color:#8B949E;'>API Keys expuestas</small>
+            <div class='accent-bar' style='background:linear-gradient(90deg,#FF7F50,#FF4500);'></div>
+            <p class='metric-title'>En progreso</p>
+            <p class='metric-value' style='color:#FF7F50;'>{stats['en_progreso']}</p>
+            <p class='metric-sub'>Alto · Medio</p>
         </div>""", unsafe_allow_html=True)
     with col4:
         st.markdown(f"""<div class='metric-card'>
-            <p class='metric-title'>HDR FALTANTES</p>
-            <p class='metric-value' style='color:#FFD700;'>{stats['web_headers_missing']}</p>
-            <small style='color:#8B949E;'>Cabeceras HTTP</small>
+            <div class='accent-bar' style='background:linear-gradient(90deg,#FFD700,#FF8800);'></div>
+            <p class='metric-title'>Secretos web</p>
+            <p class='metric-value' style='color:#FFD700;'>{stats['web_secrets']}</p>
+            <p class='metric-sub'>API keys expuestas</p>
         </div>""", unsafe_allow_html=True)
     with col5:
         st.markdown(f"""<div class='metric-card'>
-            <p class='metric-title'>REMEDIADAS</p>
+            <div class='accent-bar' style='background:linear-gradient(90deg,#39FF14,#00D4AA);'></div>
+            <p class='metric-title'>Remediadas</p>
             <p class='metric-value' style='color:#39FF14;'>{stats['remediadas']}</p>
-            <small style='color:#8B949E;'>Gestionadas</small>
+            <p class='metric-sub'>Gestionadas</p>
         </div>""", unsafe_allow_html=True)
 
     # ── FILA 2: Resumen rápido por scanner ──────────────────────────────────
-    if has_nmap or has_web or has_arp:
-        st.write("")
-        r1, r2, r3 = st.columns(3)
-        with r1:
-            if has_nmap:
-                scan = st.session_state['last_scan']
-                n_hosts = len(scan.get('hosts', []))
-                n_ports = sum(len(h.get('ports', [])) for h in scan.get('hosts', []))
-                st.markdown(f"""<div style="background:#161B22;border:1px solid #30363D;border-left:4px solid #00E5FF;padding:12px;border-radius:8px;">
-                    <b style="color:#00E5FF;">🌐 Nmap</b><br>
-                    <small style="color:#8B949E;">{scan.get('target','')} — {n_hosts} host(s), {n_ports} puerto(s)</small>
-                </div>""", unsafe_allow_html=True)
-            else:
-                st.markdown("<div style='background:#161B22;border:1px solid #30363D;padding:12px;border-radius:8px;color:#8B949E;'>🌐 Nmap — Sin datos</div>", unsafe_allow_html=True)
-        with r2:
-            if has_arp:
-                arp = st.session_state['last_arp']
-                st.markdown(f"""<div style="background:#161B22;border:1px solid #30363D;border-left:4px solid #39FF14;padding:12px;border-radius:8px;">
-                    <b style="color:#39FF14;">📡 Scapy</b><br>
-                    <small style="color:#8B949E;">{arp.get('hosts_found',0)} dispositivo(s) en red</small>
-                </div>""", unsafe_allow_html=True)
-            else:
-                st.markdown("<div style='background:#161B22;border:1px solid #30363D;padding:12px;border-radius:8px;color:#8B949E;'>📡 Scapy — Sin datos</div>", unsafe_allow_html=True)
-        with r3:
-            if has_web:
-                w = st.session_state['last_web']
-                n_paths = len(w.get('found_paths', []))
-                n_sec   = w.get('total_secrets_found', 0)
-                techs   = ", ".join(w.get('detected_techs', [])) or w.get('tech', 'Desconocida')
-                st.markdown(f"""<div style="background:#161B22;border:1px solid #30363D;border-left:4px solid #FF4B4B;padding:12px;border-radius:8px;">
-                    <b style="color:#FF4B4B;">🕸️ Web</b><br>
-                    <small style="color:#8B949E;">{w.get('target','')} | {techs}<br>{n_paths} ruta(s), {n_sec} secreto(s)</small>
-                </div>""", unsafe_allow_html=True)
-            else:
-                st.markdown("<div style='background:#161B22;border:1px solid #30363D;padding:12px;border-radius:8px;color:#8B949E;'>🕸️ Web — Sin datos</div>", unsafe_allow_html=True)
+    st.markdown("<div style='margin-top:18px;margin-bottom:6px;'></div>", unsafe_allow_html=True)
+    r1, r2, r3, r4 = st.columns(4)
+    with r1:
+        if has_nmap:
+            scan = st.session_state['last_scan']
+            n_hosts = len(scan.get('hosts', []))
+            n_ports = sum(len(h.get('ports', [])) for h in scan.get('hosts', []))
+            st.markdown(f"""<div class='scanner-card' style='border-left:3px solid #00D4FF;'>
+                <span style='color:#00D4FF;font-weight:700;font-size:12px;'>🌐 NMAP</span><br>
+                <span style='color:#C9D1D9;'>{scan.get('target','')}</span><br>
+                <span style='color:#4A5568;font-size:11px;'>{n_hosts} host · {n_ports} puertos</span>
+            </div>""", unsafe_allow_html=True)
+        else:
+            st.markdown("<div class='scanner-card'><span style='color:#4A5568;font-size:12px;'>🌐 Nmap — sin datos</span></div>", unsafe_allow_html=True)
+    with r2:
+        if has_arp:
+            arp = st.session_state['last_arp']
+            st.markdown(f"""<div class='scanner-card' style='border-left:3px solid #39FF14;'>
+                <span style='color:#39FF14;font-weight:700;font-size:12px;'>📡 SCAPY</span><br>
+                <span style='color:#C9D1D9;'>{arp.get('hosts_found',0)} dispositivos</span><br>
+                <span style='color:#4A5568;font-size:11px;'>Modo: {arp.get('mode','?')}</span>
+            </div>""", unsafe_allow_html=True)
+        else:
+            st.markdown("<div class='scanner-card'><span style='color:#4A5568;font-size:12px;'>📡 Scapy — sin datos</span></div>", unsafe_allow_html=True)
+    with r3:
+        if has_web:
+            w = st.session_state['last_web']
+            n_paths = len(w.get('found_paths', []))
+            n_sec   = w.get('total_secrets_found', 0)
+            st.markdown(f"""<div class='scanner-card' style='border-left:3px solid #FF7F50;'>
+                <span style='color:#FF7F50;font-weight:700;font-size:12px;'>🕸️ WEB</span><br>
+                <span style='color:#C9D1D9;'>{w.get('target','')}</span><br>
+                <span style='color:#4A5568;font-size:11px;'>{n_paths} rutas · {n_sec} secretos</span>
+            </div>""", unsafe_allow_html=True)
+        else:
+            st.markdown("<div class='scanner-card'><span style='color:#4A5568;font-size:12px;'>🕸️ Web — sin datos</span></div>", unsafe_allow_html=True)
+    with r4:
+        ssl_ok  = 'last_ssl'   in st.session_state
+        mail_ok = 'last_email' in st.session_state
+        ssl_f   = len(st.session_state.get('last_ssl',  {}).get('findings', [])) if ssl_ok  else 0
+        mail_f  = len(st.session_state.get('last_email',{}).get('findings', [])) if mail_ok else 0
+        c4_color = "#A855F7" if (ssl_ok or mail_ok) else "#4A5568"
+        c4_label = f"SSL: {ssl_f} hallazgos · Email: {mail_f} hallazgos" if (ssl_ok or mail_ok) else "sin datos"
+        st.markdown(f"""<div class='scanner-card' style='border-left:3px solid {c4_color};'>
+            <span style='color:{c4_color};font-weight:700;font-size:12px;'>🔐 SSL · EMAIL</span><br>
+            <span style='color:#4A5568;font-size:11px;'>{c4_label}</span>
+        </div>""", unsafe_allow_html=True)
 
     # ── FILA 3: Gráficas ────────────────────────────────────────────────────
-    st.write("")
+    st.markdown("<div style='margin-top:22px;'></div>", unsafe_allow_html=True)
     c_left, c_right = st.columns([1, 2])
     with c_left:
-        st.subheader("RIESGO REAL")
+        st.markdown("### Distribución de riesgo")
         if sum(stats['distribucion']) > 0:
             fig = go.Figure(data=[go.Pie(
                 labels=['Crítico', 'Alto', 'Medio', 'Bajo'],
                 values=stats['distribucion'],
-                hole=.6,
-                marker_colors=['#FF4B4B', '#FF7F50', '#FFD700', '#39FF14']
+                hole=.65,
+                marker_colors=['#FF4B4B', '#FF7F50', '#FFD700', '#39FF14'],
+                textinfo='none',
             )])
         else:
-            fig = go.Figure()
-        fig.update_layout(showlegend=False, paper_bgcolor='rgba(0,0,0,0)', height=300, font=dict(color="white"))
-        st.plotly_chart(fig, width='stretch')
+            fig = go.Figure(data=[go.Pie(
+                labels=['Sin datos'], values=[1], hole=.65,
+                marker_colors=['#1E2733'], textinfo='none',
+            )])
+        fig.update_layout(
+            showlegend=True,
+            legend=dict(font=dict(color="#8B949E", size=11), orientation="h", x=0, y=-0.1),
+            paper_bgcolor='rgba(0,0,0,0)',
+            height=270,
+            margin=dict(l=0, r=0, t=10, b=0),
+            font=dict(color="#8B949E"),
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
     with c_right:
-        st.subheader("📊 DISTRIBUCIÓN DE HALLAZGOS POR SCANNER")
+        st.markdown("### Hallazgos por categoría")
         if has_nmap or has_web:
             nmap_ports = stats['totales']
             web_secs   = stats['web_secrets']
@@ -451,59 +633,66 @@ if selected == "Dashboard":
             missing_h  = stats['web_headers_missing']
             maps_n     = len(st.session_state.get('last_web', {}).get('exposed_source_maps', []))
 
-            bar_labels = ['Puertos Nmap', 'Secretos Web', 'Problemas CORS', 'Hdrs Faltantes', 'Source Maps']
+            bar_labels = ['Puertos', 'Secretos JS', 'CORS', 'Headers', 'Source Maps']
             bar_values = [nmap_ports, web_secs, cors_n, missing_h, maps_n]
-            bar_colors = ['#00E5FF', '#FF4B4B', '#FF7F50', '#FFD700', '#A855F7']
+            bar_colors = ['#00D4FF', '#FF4B4B', '#FF7F50', '#FFD700', '#A855F7']
 
             fig_b = go.Figure(data=[go.Bar(
                 x=bar_labels, y=bar_values,
                 marker_color=bar_colors,
-                marker_line_color='#21262D',
-                marker_line_width=1,
-                opacity=0.85,
+                marker_line_width=0,
+                opacity=0.9,
                 text=bar_values,
-                textposition='auto',
+                textposition='outside',
+                textfont=dict(color="#8B949E", size=11),
             )])
             fig_b.update_layout(
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                height=300, margin=dict(l=0, r=0, t=30, b=0),
-                font=dict(color="white"),
-                xaxis=dict(showgrid=False),
-                yaxis=dict(showgrid=True, gridcolor='#1E2129', zeroline=False),
+                height=270, margin=dict(l=0, r=0, t=10, b=0),
+                font=dict(color="#8B949E", size=11),
+                xaxis=dict(showgrid=False, color="#4A5568"),
+                yaxis=dict(showgrid=True, gridcolor='#1E2733', zeroline=False, color="#4A5568"),
             )
             st.plotly_chart(fig_b, use_container_width=True)
         else:
-            st.info("Ejecuta al menos un escaneo para ver datos reales aquí.")
+            st.markdown("""
+                <div style='height:270px;display:flex;align-items:center;justify-content:center;
+                            background:#10151E;border:1px solid #1E2733;border-radius:8px;'>
+                    <span style='color:#4A5568;font-size:13px;'>Ejecuta un escaneo para ver datos</span>
+                </div>
+            """, unsafe_allow_html=True)
 
-    # ── FILA 4: Tabla de hallazgos interactiva ──────────────────────────────
-    st.write("---")
-    st.subheader("Gestión de Hallazgos en Tiempo Real")
+    # ── FILA 4: Gestión de hallazgos ────────────────────────────────────────
+    st.markdown("<hr style='border-color:#1E2733;margin:24px 0 16px;'>", unsafe_allow_html=True)
+    st.markdown("### Hallazgos activos")
 
     if stats['lista_hallazgos']:
         for h in stats['lista_hallazgos']:
             fuente_icon = {"nmap": "🌐", "web": "🕸️"}.get(h.get('fuente', ''), "🔍")
-            col_info, col_btn = st.columns([4, 1])
+            col_info, col_btn = st.columns([5, 1])
             with col_info:
                 st.markdown(f"""
-                    <div style="background-color:#161B22;border-left:5px solid {h['color']};padding:12px;border-radius:4px;margin-bottom:5px;">
-                        <span style="color:{h['color']};font-weight:bold;">{h['nivel']}</span>
-                        <span style="color:#8B949E;font-size:11px;margin-left:8px;">{fuente_icon}</span> |
-                        <span style="color:white;margin-left:8px;">{h['host']}</span> |
-                        <span style="color:#8B949E;font-size:13px;">{h['servicio']}</span>
+                    <div class='finding-row' style='border-left:4px solid {h["color"]};'>
+                        <span style='color:{h["color"]};font-weight:700;font-size:12px;
+                                     text-transform:uppercase;letter-spacing:0.05em;'>{h["nivel"]}</span>
+                        <span style='color:#4A5568;font-size:11px;margin-left:8px;'>{fuente_icon}</span>
+                        <span style='color:#4A5568;margin:0 6px;'>·</span>
+                        <span style='color:#C9D1D9;'>{h["host"]}</span>
+                        <span style='color:#4A5568;margin:0 6px;'>·</span>
+                        <span style='color:#8B949E;'>{h["servicio"]}</span>
                     </div>
                 """, unsafe_allow_html=True)
             with col_btn:
-                if st.button("✅ Solucionar", key=f"btn_{h['id']}", width='stretch'):
+                if st.button("Cerrar", key=f"btn_{h['id']}", type="secondary"):
                     st.session_state.remediadas_ids.add(h['id'])
                     st.rerun()
     else:
-        st.success("🎉 ¡Felicidades! No hay vulnerabilidades pendientes de gestionar.")
+        st.success("Sin hallazgos pendientes.")
 
 elif selected == "Scanners":
-    st.title("🔍 Centro de Escaneo Multimodal")
+    st.title("Scanners")
     t_nmap, t_scapy, t_web, t_ssl, t_email = st.tabs([
-        "🌐 Sentinel-Nmap", "📡 Sentinel-Scapy", "🕸️ Web-Enum",
-        "🔐 SSL/TLS Analyzer", "📧 Email Security"
+        "🌐 Nmap", "📡 Red (Scapy)", "🕸️ Web", "🔐 SSL/TLS", "📧 Email"
     ])
     
     with t_nmap:
@@ -536,7 +725,7 @@ elif selected == "Scanners":
                     st.error(f"❌ ACCESO DENEGADO: {target} está en la lista de exclusión.")
                     st.info("Modifica la lista en Settings > Red.")
                 else:
-                    with st.status("Ejecutando módulos Sentinel...", expanded=True) as status:
+                    with st.status("Ejecutando escaneo...", expanded=True) as status:
                         st.caption("Consola en vivo:")
                         _nmap_console = st.empty()
                         _nmap_logs = []
@@ -557,7 +746,7 @@ elif selected == "Scanners":
                             st.error(f"Fallo en Nmap: {resultado_nmap['error']}")
                             status.update(label="❌ Error", state="error")
                         else:
-                            st.write("🤖 Cyber-Jarvis generando reporte...")
+                            st.write("🤖 Analizando con IA...")
                             reporte_ia = analizar_con_ia(
                                 resultado_nmap,
                                 provider=st.session_state.ai_provider,
@@ -606,7 +795,7 @@ elif selected == "Scanners":
                                 st.download_button(
                                     "💾 Descargar PDF",
                                     data=f,
-                                    file_name=f"Sentinel_{res['target']}.pdf",
+                                    file_name=f"OtsuSearch_{res['target']}.pdf",
                                     mime="application/pdf",
                                 )
 
@@ -649,7 +838,7 @@ elif selected == "Scanners":
                                     <div style="background:#161B22;border-left:4px solid {sev_color};padding:10px;border-radius:4px;margin-bottom:6px;">
                                         <b style="color:{sev_color};">{cve['cve_id']}</b>
                                         <span style="color:#8B949E;font-size:11px;margin-left:10px;">
-                                            CVSS {cve['cvss']} | Severidad: {cve.get('severity','N/A')} | Prioridad Sentinel: <b style="color:#00E5FF;">{priority}</b>
+                                            CVSS {cve['cvss']} | Severidad: {cve.get('severity','N/A')} | Prioridad: <b style="color:#00D4FF;">{priority}</b>
                                         </span><br>
                                         <small style="color:#C9D1D9;">{cve['description'][:200]}...</small><br>
                                         <small>
@@ -688,7 +877,7 @@ elif selected == "Scanners":
                 # ── Tab: Movimiento Lateral ──────────────────────────────────
                 with t_lateral:
                     if st.button("🎯 Proyectar Movimiento Lateral con IA", type="primary", key="btn_lateral"):
-                        with st.spinner("Cyber-Jarvis simulando ruta de ataque APT..."):
+                        with st.spinner("Simulando ruta de ataque APT..."):
                             ml_result = analizar_movimiento_lateral_ia(
                                 st.session_state['last_scan'],
                                 provider=st.session_state.ai_provider,
@@ -756,13 +945,13 @@ elif selected == "Scanners":
                                     </div>
                                 """, unsafe_allow_html=True)
                     else:
-                        st.info("Presiona el botón para que Cyber-Jarvis proyecte cómo un atacante se movería por la red basándose en los servicios detectados.")
+                        st.info("Presiona el botón para proyectar cómo un atacante se movería por la red basándose en los servicios detectados.")
 
                 # ── Tab: Fix-it Engine ───────────────────────────────────────
                 with t_fix:
                     st.markdown("#### Fix-it Engine — Scripts de Remediación Automática")
                     if st.button("⚡ Generar Scripts de Remediación", type="primary", key="btn_fixengine"):
-                        with st.spinner("Cyber-Jarvis generando scripts..."):
+                        with st.spinner("Generando scripts de remediación..."):
                             scripts = generar_scripts_ia(
                                 st.session_state['last_scan'],
                                 provider=st.session_state.ai_provider,
@@ -773,18 +962,54 @@ elif selected == "Scanners":
                     if 'remediation_scripts' in st.session_state:
                         st.markdown(st.session_state['remediation_scripts'])
                     else:
-                        st.info("Presiona el botón para generar scripts de remediación para cada servicio detectado.")
+                        st.info("Presiona el botón para generar scripts Bash/PowerShell para cada servicio detectado.")
             else:
                 st.info("Configura el objetivo y presiona 'Iniciar Auditoría' para ver los resultados aquí.")
 
     with t_scapy:
-        st.subheader("📡 Sentinel-Scapy — Reconocimiento de Red Avanzado")
+        st.subheader("📡 Reconocimiento de Red — ARP & Scapy")
+
+        # ── GUÍA DE SETUP (si hay dependencias faltantes) ────────────────────
+        issues = st.session_state.get('setup_issues', {})
+        if issues:
+            with st.expander("⚠️ Dependencias faltantes — expande para ver cómo resolverlas", expanded=True):
+                for key, issue in issues.items():
+                    st.markdown(f"""
+                        <div style='background:#1A0F00;border-left:4px solid #FFD700;
+                                    padding:10px 14px;border-radius:6px;margin-bottom:8px;'>
+                            <b style='color:#FFD700;'>{issue["title"]}</b><br>
+                            <small style='color:#8B949E;'>{issue["detail"]}</small><br>
+                            <code style='color:#00D4FF;font-size:12px;'>{issue["fix"]}</code>
+                        </div>
+                    """, unsafe_allow_html=True)
 
         # ── PANEL DE CONTROL ─────────────────────────────────────────────────
         ctrl_col, map_col = st.columns([1, 2])
 
         with ctrl_col:
-            target_net  = st.text_input("Rango de Red", st.session_state.config.get("default_range", "192.168.1.0/24"))
+            # Usar subred auto-detectada como default, config como override guardado
+            _default_range = (
+                st.session_state.config.get("default_range")
+                or st.session_state.net_subnet
+                or "192.168.1.0/24"
+            )
+            # Mostrar la interfaz detectada como hint
+            _detected_iface = st.session_state.net_iface or "auto"
+            st.markdown(f"""
+                <div style='background:#10151E;border:1px solid #1E2733;border-left:3px solid #00D4FF;
+                            padding:8px 12px;border-radius:6px;margin-bottom:10px;font-size:12px;'>
+                    <span style='color:#4A5568;'>Red detectada: </span>
+                    <span style='color:#00D4FF;font-weight:600;'>{st.session_state.net_subnet}</span>
+                    &nbsp;·&nbsp;
+                    <span style='color:#4A5568;'>Interfaz: </span>
+                    <span style='color:#8B949E;'>{_detected_iface}</span>
+                    &nbsp;·&nbsp;
+                    <span style='color:#4A5568;'>OS: </span>
+                    <span style='color:#8B949E;'>{st.session_state.net_os}</span>
+                </div>
+            """, unsafe_allow_html=True)
+
+            target_net  = st.text_input("Rango de Red", _default_range)
             scan_mode   = st.radio("Modo de Escaneo", ["Activo (ARP Broadcast)", "Pasivo (Sniff silencioso)"], horizontal=True)
             passive_dur = 30
             if "Pasivo" in scan_mode:
@@ -794,11 +1019,19 @@ elif selected == "Scanners":
             with st.expander("Opciones avanzadas"):
                 opt_ttl      = st.toggle("TTL OS Fingerprinting", value=False)
                 opt_hostname = st.toggle("Resolver Hostnames (DNS inverso)", value=False)
+                custom_iface = st.text_input(
+                    "Interfaz (dejar vacío = auto)",
+                    value=st.session_state.config.get("default_interface", ""),
+                    help="En Linux: eth0, wlan0 · En Windows: 'Wi-Fi', 'Ethernet' · Vacío = auto-detectado",
+                )
                 if st.session_state.config.get("debug_mode", False) and "Activo" in scan_mode:
                     st.code(f"Ether(dst='ff:ff:ff:ff:ff:ff')/ARP(pdst='{target_net}')", language="python")
 
             if st.button("🔍 Iniciar Descubrimiento", type="primary", use_container_width=True):
-                iface = st.session_state.config.get("default_interface", "").strip() or None
+                from utils.network_detector import get_scapy_iface
+                _raw_iface = custom_iface.strip() or st.session_state.net_iface or None
+                iface = get_scapy_iface(_raw_iface)
+
                 st.caption("Consola en vivo:")
                 _scapy_console = st.empty()
                 _scapy_logs    = []
@@ -817,7 +1050,11 @@ elif selected == "Scanners":
 
                 if "error" in res_scapy:
                     st.error(res_scapy["error"])
-                    st.info("💡 Scapy requiere privilegios de root. Ejecuta: sudo venv/bin/python app.py")
+                    _os = st.session_state.net_os
+                    if _os == "Windows":
+                        st.info("En Windows: instala Npcap y ejecuta la terminal como Administrador.")
+                    else:
+                        st.info("Ejecuta con privilegios root: sudo venv/bin/python -m streamlit run app.py")
                 else:
                     st.session_state['last_arp'] = res_scapy
                     found = res_scapy['hosts_found']
@@ -1309,8 +1546,8 @@ elif selected == "Knowledge Base":
     if 'kb_borrar_confirmacion' not in st.session_state:
         st.session_state.kb_borrar_confirmacion = None
 
-    st.title("📚 Knowledge Base")
-    st.write("Sentinel-Core AI • Gestión de Documentación y Búsqueda Semántica")
+    st.title("Knowledge Base")
+    st.markdown("<p style='color:#4A5568;margin-top:-8px;font-size:13px;'>Gestión de documentación y búsqueda semántica con RAG</p>", unsafe_allow_html=True)
 
     # ── MÉTRICAS REALES ──────────────────────────────────────────────────────
     docs_lista = listar_documentos()
@@ -1408,10 +1645,10 @@ elif selected == "Knowledge Base":
     # ── COLUMNA DERECHA: RAG ─────────────────────────────────────────────────
     with col_rag:
         st.markdown("""
-            <div style="background-color:#161B22;border:1px solid #30363D;padding:16px;border-radius:12px;margin-bottom:12px;">
-                <p style="margin:0;font-weight:bold;color:#00E5FF;">🤖 Consulta RAG</p>
-                <p style="color:#8B949E;font-size:12px;margin:4px 0 0 0;">
-                    Búsqueda por relevancia en los documentos indexados +<br>análisis con Gemini AI
+            <div style="background:#10151E;border:1px solid #1E2733;border-left:3px solid #00D4FF;padding:14px;border-radius:8px;margin-bottom:12px;">
+                <p style="margin:0;font-weight:700;color:#00D4FF;font-size:13px;">Consulta RAG</p>
+                <p style="color:#4A5568;font-size:11px;margin:4px 0 0 0;">
+                    Búsqueda semántica en documentos + análisis con IA
                 </p>
             </div>
         """, unsafe_allow_html=True)
@@ -1462,7 +1699,7 @@ elif selected == "Knowledge Base":
                         puertos = [f"{p['port']}/{p['service']}" for h in s.get('hosts', []) for p in h.get('ports', [])]
                         contexto_tecnico = f"Último escaneo Nmap — objetivo: {s.get('target','')}, puertos: {', '.join(puertos[:20])}"
 
-                    prompt_final = f"""Eres Cyber-Jarvis, analista de ciberseguridad.
+                    prompt_final = f"""Eres un analista de ciberseguridad de OtsuSearch.
 Responde la pregunta del auditor basándote ÚNICAMENTE en los fragmentos de documentos proporcionados.
 Cita la fuente (nombre del documento) cuando uses información de ella.
 Si los documentos no contienen información suficiente, indícalo claramente.
@@ -1477,7 +1714,7 @@ PREGUNTA DEL AUDITOR:
 
 Responde en español, de forma estructurada y concisa."""
 
-                    with st.spinner("Cyber-Jarvis analizando..."):
+                    with st.spinner("Analizando con IA..."):
                         try:
                             if st.session_state.ai_provider == "claude":
                                 import anthropic as _ant
@@ -1516,7 +1753,7 @@ Responde en español, de forma estructurada y concisa."""
                     st.markdown(entry['respuesta'])
 
 elif selected == "Reports":
-    st.header("📊 Centro de Reportes Corporativos")
+    st.title("Reportes")
     
     # Verificamos qué datos tenemos disponibles
     has_nmap = 'last_scan' in st.session_state
@@ -1529,7 +1766,7 @@ elif selected == "Reports":
         st.success(f"Datos listos para procesar: {'Nmap ' if has_nmap else ''}{'Scapy ' if has_scapy else ''}{'Web' if has_web else ''}")
         
         if st.button("🚀 GENERAR AUDITORÍA INTEGRAL", type="primary"):
-            with st.spinner("Cyber-Jarvis está redactando el informe final..."):
+            with st.spinner("Generando auditoría integral con IA..."):
                 # 1. Obtener análisis IA
                 ai_report = analizar_auditoria_ia(
                     st.session_state.get('last_scan'),
@@ -1563,7 +1800,7 @@ elif selected == "Reports":
                 st.download_button(
                     label="📥 Descargar Reporte PDF Oficial",
                     data=f,
-                    file_name="Sentinel_Core_Full_Audit.pdf",
+                    file_name="OtsuSearch_Full_Audit.pdf",
                     mime="application/pdf",
                     width='stretch'
                 )
@@ -1574,7 +1811,7 @@ elif selected == "Settings":
     # Cargamos configuración actual
     current_cfg = load_config()
 
-    st.title("⚙️ Configuración del Sistema")
+    st.title("Configuración")
     tk, te, tn = st.tabs(["🔑 Claves API", "🤖 Motor IA", "🌐 Red"])
 
     with tk:
@@ -1660,7 +1897,7 @@ elif selected == "Settings":
         
         st.subheader("🛠️ Opciones Avanzadas")
         god_mode = st.toggle("Debug Mode", value=current_cfg.get("debug_mode", False))
-        st.caption("Muestra los comandos crudos (Raw Commands) que Sentinel ejecuta en el sistema.")
+        st.caption("Muestra los comandos crudos (Raw Commands) que OtsuSearch ejecuta en el sistema.")
 
         if st.button("💾 Guardar Ajustes de Red"):
             current_cfg["excluded_ips"] = exclusiones

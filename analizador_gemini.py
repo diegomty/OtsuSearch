@@ -248,7 +248,7 @@ def analizar_con_gemini(datos_json, api_key=None, model_name="gemini-2.5-flash",
     if not api_key or api_key.strip() == "":
         return "⚠️ Error: No hay API Key configurada. Ve a 'Settings' y guarda tu clave."
     client = genai.Client(api_key=api_key)
-    print("[*] Sentinel-Core: Iniciando análisis con Gemini...")
+    print("[*] OtsuSearch: Iniciando análisis con Gemini...")
     try:
         return _gemini_generate(
             client, model_name,
@@ -268,7 +268,7 @@ def analizar_con_gemini(datos_json, api_key=None, model_name="gemini-2.5-flash",
 def analizar_con_claude(datos_json, api_key=None, model_name="claude-opus-4-7", temp=0.3):
     if not api_key or api_key.strip() == "":
         return "⚠️ Error: No hay Anthropic API Key configurada. Ve a 'Settings' y guarda tu clave."
-    print(f"[*] Sentinel-Core: Iniciando análisis con Claude ({model_name})...")
+    print(f"[*] OtsuSearch: Iniciando análisis con Claude ({model_name})...")
     try:
         return _claude_generate(
             api_key, model_name,
@@ -298,7 +298,7 @@ def analizar_auditoria_completa(nmap_data, scapy_data, web_data, api_key=None,
     if not api_key or api_key.strip() == "":
         return "⚠️ Error: No hay API Key configurada. Ve a 'Settings' y guarda tu clave."
     client = genai.Client(api_key=api_key)
-    print("[*] Cyber-Jarvis: Consolidando análisis multimodal (Gemini)...")
+    print("[*] OtsuSearch: Consolidando análisis multimodal (Gemini)...")
     try:
         return _gemini_generate(
             client, model_name,
@@ -314,7 +314,7 @@ def analizar_auditoria_completa_claude(nmap_data, scapy_data, web_data, api_key=
                                        model_name="claude-opus-4-7", temp=0.3):
     if not api_key or api_key.strip() == "":
         return "⚠️ Error: No hay Anthropic API Key configurada. Ve a 'Settings' y guarda tu clave."
-    print(f"[*] Cyber-Jarvis: Consolidando análisis multimodal (Claude)...")
+    print(f"[*] OtsuSearch: Consolidando análisis multimodal (Claude)...")
     try:
         return _claude_generate(
             api_key, model_name,

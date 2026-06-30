@@ -11,3 +11,4 @@ scapy
 pandas
 PyPDF2
 dnspython
+netifaces

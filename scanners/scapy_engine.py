@@ -341,7 +341,7 @@ def run_arp_scan(interface=None, target_range="192.168.1.0/24", log_fn=None,
 
         os.makedirs("data/scans", exist_ok=True)
         output = {
-            "tool":                "Sentinel-Scapy",
+            "tool":                "OtsuSearch-Scapy",
             "mode":                "active",
             "interface":           interface,
             "hosts_found":         len(discovered_hosts),
@@ -409,7 +409,7 @@ def run_passive_sniff(interface=None, duration=30, log_fn=None):
 
     os.makedirs("data/scans", exist_ok=True)
     output = {
-        "tool":                "Sentinel-Scapy",
+        "tool":                "OtsuSearch-Scapy",
         "mode":                "passive",
         "interface":           interface,
         "duration_seconds":    duration,
