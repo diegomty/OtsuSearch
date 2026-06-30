@@ -1,0 +1,18 @@
+version: '3.8'
+services:
+  sentinel-core:
+    build: .
+    container_name: sentinel_ai
+    network_mode: "host"
+    privileged: true
+    # AÑADIMOS ESTO PARA ELIMINAR RESTRICCIONES DE KERNEL
+    security_opt:
+      - seccomp:unconfined
+      - apparmor:unconfined
+    cap_add:
+      - ALL # En lugar de solo dos, dale todas las capacidades de red
+    environment:
+      - GEMINI_KEY=${GEMINI_KEY:-}
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

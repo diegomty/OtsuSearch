@@ -1,0 +1,32 @@
+# ── Entornos virtuales ───────────────────────────────────────────────────────
+venv/
+.venv/
+
+# ── Configuración con secretos (NUNCA subir al repo) ─────────────────────────
+data/config.json
+.env
+*.env
+
+# ── Reportes y escaneos generados (datos sensibles del cliente) ───────────────
+data/reports/
+data/scans/
+data/knowledge/
+*.pdf
+REPORTE_IA.md
+escaneo.json
+
+# ── Caché de Python ───────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ── IDEs ─────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Sistema ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db

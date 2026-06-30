@@ -1,0 +1,13 @@
+streamlit
+streamlit-option-menu
+streamlit-echarts
+python-nmap
+google-genai
+anthropic
+requests
+reportlab
+plotly
+scapy
+pandas
+PyPDF2
+dnspython

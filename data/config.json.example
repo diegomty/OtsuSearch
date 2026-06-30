@@ -1,0 +1,12 @@
+{
+    "gemini_key": "",
+    "anthropic_key": "",
+    "ai_provider": "gemini",
+    "model": "gemini-2.5-flash",
+    "claude_model": "claude-opus-4-7",
+    "temperature": 0.3,
+    "default_interface": "eth0",
+    "excluded_ips": "",
+    "debug_mode": false,
+    "default_range": "192.168.1.0/24"
+}
