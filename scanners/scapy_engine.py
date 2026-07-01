@@ -292,17 +292,21 @@ def run_arp_scan(interface=None, target_range="192.168.1.0/24", log_fn=None,
         if log_fn:
             log_fn(msg)
 
-    if not interface:
-        interface = str(scapy_conf.iface)
+    # Resolve interface: on Windows passing iface=None lets Scapy use conf.iface
+    # as a NetworkInterface object (not string), which is the correct type for srp().
+    # Passing str(conf.iface) can fail on some Windows/Scapy combinations.
+    _srp_iface = interface if interface else None
+    _iface_label = interface if interface else str(scapy_conf.iface)
 
     log(f"[*] Iniciando escaneo ARP")
-    log(f"[*] Interfaz: {interface} | Rango: {target_range}")
-    log("[*] Enviando paquetes ARP broadcast (timeout 3s)...")
+    log(f"[*] Interfaz: {_iface_label} | Rango: {target_range}")
+    log(f"[*] OS: {__import__('platform').system()}")
+    log("[*] Enviando paquetes ARP broadcast (timeout 5s)...")
 
     try:
         arp    = ARP(pdst=target_range)
         ether  = Ether(dst="ff:ff:ff:ff:ff:ff")
-        result = srp(ether/arp, timeout=3, verbose=0, iface=interface)[0]
+        result = srp(ether/arp, timeout=5, verbose=0, iface=_srp_iface)[0]
 
         discovered_hosts = []
         for _, received in result:
@@ -361,8 +365,15 @@ def run_arp_scan(interface=None, target_range="192.168.1.0/24", log_fn=None,
         return output
 
     except Exception as e:
-        log(f"[!] Error: {str(e)}")
-        return {"error": f"Error de permisos o red: {str(e)}. (¿Ejecutaste con sudo?)"}
+        import platform
+        err = str(e)
+        log(f"[!] ERROR: {err}")
+        if platform.system() == "Windows":
+            log("[!] En Windows: verifica que Npcap este instalado con 'WinPcap API-compatible Mode'")
+            log("[!] y que estés ejecutando la terminal como Administrador.")
+        else:
+            log("[!] Ejecuta con: sudo venv/bin/python -m streamlit run app.py")
+        return {"error": err}
 
 
 # ── Passive sniff mode ───────────────────────────────────────────────────────
@@ -373,11 +384,11 @@ def run_passive_sniff(interface=None, duration=30, log_fn=None):
         if log_fn:
             log_fn(msg)
 
-    if not interface:
-        interface = str(scapy_conf.iface)
+    _srp_iface  = interface if interface else None
+    _iface_label = interface if interface else str(scapy_conf.iface)
 
     log(f"[*] MODO PASIVO — escuchando tráfico ARP por {duration}s")
-    log(f"[*] Interfaz: {interface} | Sin enviar paquetes (100% silencioso)")
+    log(f"[*] Interfaz: {_iface_label} | Sin enviar paquetes (100% silencioso)")
 
     seen = {}
 
@@ -391,7 +402,7 @@ def run_passive_sniff(interface=None, duration=30, log_fn=None):
                 log(f"  [+] {ip}  {mac}  [{vendor}]")
 
     try:
-        sniff(iface=interface, filter="arp", prn=_handle, timeout=duration, store=0)
+        sniff(iface=_srp_iface, filter="arp", prn=_handle, timeout=duration, store=0)
     except Exception as e:
         log(f"[!] Error en sniff pasivo: {str(e)}")
         return {"error": str(e)}
